@@ -181,6 +181,81 @@ function generateRandomSalt(length = 32) {
     return window.goWasm.generateRandomBytes(length);
 }
 
+// Derive key from answers using Shamir Secret Sharing
+async function deriveKeyFromAnswers(answers, salt) {
+    try {
+        console.log('Starting key derivation process');
+
+        // Convert answers to a JavaScript array for WebAssembly
+        const answersArray = [];
+        for (let answer of answers) {
+            answersArray.push(answer);
+        }
+        console.log(`Prepared ${answersArray.length} answers for WebAssembly`);
+
+        // Derive key using Shamir Secret Sharing
+        // We use a threshold of Math.ceil(2/3 * answers.length) to require at least 2/3 of the answers
+        // This means for 3 questions, you need 2 correct answers
+        // For 5 questions, you need 4 correct answers, etc.
+        const threshold = Math.max(2, Math.ceil(answers.length * 2/3));
+        console.log(`Using threshold of ${threshold} out of ${answers.length} answers`);
+
+        // Check if WebAssembly is available
+        if (!window.goWasm) {
+            console.error('WebAssembly module not available');
+            throw new Error('WebAssembly module not available. Please reload the page and try again.');
+        }
+
+        // Try to reinitialize WebAssembly if needed
+        if (typeof window.initWebAssembly === 'function' && (!window.goWasm.deriveKey)) {
+            console.log('Attempting to reinitialize WebAssembly...');
+            try {
+                await window.initWebAssembly();
+            } catch (error) {
+                console.error('Failed to reinitialize WebAssembly:', error);
+            }
+        }
+
+        // Check if deriveKey function is available
+        if (!window.goWasm.deriveKey) {
+            console.error('WebAssembly deriveKey function not available');
+            throw new Error('The encryption function is not available. This is a critical function that requires WebAssembly support.');
+        }
+
+        console.log('Calling WebAssembly deriveKey function with:', {
+            answerCount: answersArray.length,
+            saltLength: salt ? salt.length : 0,
+            threshold: threshold
+        });
+
+        try {
+            // Check if we have enough answers
+            if (answersArray.length < threshold) {
+                console.error('Not enough answers provided. Need at least ' + threshold + ' answers.');
+                throw new Error('Not enough answers provided. Need at least ' + threshold + ' answers.');
+            }
+
+            const key = window.goWasm.deriveKey(answersArray, salt, threshold);
+
+            // Check if key is valid
+            if (!key || typeof key !== 'string') {
+                console.error('Invalid key returned from WebAssembly');
+                throw new Error('Invalid key returned from WebAssembly');
+            }
+
+            console.log('Key derived successfully:', key.substring(0, 10) + '...');
+            return key;
+        } catch (error) {
+            console.error('Error in WebAssembly deriveKey function:', error);
+            throw new Error('Failed to derive encryption key: ' + error.message);
+        }
+    } catch (error) {
+        console.error('Error deriving key:', error);
+        console.error('Error stack:', error.stack);
+        throw new Error('Failed to derive key: ' + error.message);
+    }
+}
+
 // Create a new secret
 async function createSecret() {
     try {
@@ -232,80 +307,8 @@ async function createSecret() {
         const salt = generateRandomSalt();
         console.log('Generated salt:', salt);
 
-        // Derive key from answers using Shamir Secret Sharing
-        async function deriveKeyFromAnswers(answers, salt) {
-            try {
-                console.log('Starting key derivation process');
-
-                // Convert answers to a JavaScript array for WebAssembly
-                const answersArray = [];
-                for (let answer of answers) {
-                    answersArray.push(answer);
-                }
-                console.log(`Prepared ${answersArray.length} answers for WebAssembly`);
-
-                // Derive key using Shamir Secret Sharing
-                // We use a threshold of Math.ceil(2/3 * answers.length) to require at least 2/3 of the answers
-                // This means for 3 questions, you need 2 correct answers
-                // For 5 questions, you need 4 correct answers, etc.
-                const threshold = Math.max(2, Math.ceil(answers.length * 2/3));
-                console.log(`Using threshold of ${threshold} out of ${answers.length} answers`);
-
-                // Check if WebAssembly is available
-                if (!window.goWasm) {
-                    console.error('WebAssembly module not available');
-                    throw new Error('WebAssembly module not available. Please reload the page and try again.');
-                }
-
-                // Try to reinitialize WebAssembly if needed
-                if (typeof window.initWebAssembly === 'function' && (!window.goWasm.deriveKey)) {
-                    console.log('Attempting to reinitialize WebAssembly...');
-                    try {
-                        await window.initWebAssembly();
-                    } catch (error) {
-                        console.error('Failed to reinitialize WebAssembly:', error);
-                    }
-                }
-
-                // Check if deriveKey function is available
-                if (!window.goWasm.deriveKey) {
-                    console.error('WebAssembly deriveKey function not available');
-                    throw new Error('The encryption function is not available. This is a critical function that requires WebAssembly support.');
-                }
-
-                console.log('Calling WebAssembly deriveKey function with:', {
-                    answerCount: answersArray.length,
-                    saltLength: salt ? salt.length : 0,
-                    threshold: threshold
-                });
-
-                try {
-                    // Check if we have enough answers
-                    if (answersArray.length < threshold) {
-                        console.error('Not enough answers provided. Need at least ' + threshold + ' answers.');
-                        throw new Error('Not enough answers provided. Need at least ' + threshold + ' answers.');
-                    }
-
-                    const key = window.goWasm.deriveKey(answersArray, salt, threshold);
-
-                    // Check if key is valid
-                    if (!key || typeof key !== 'string') {
-                        console.error('Invalid key returned from WebAssembly');
-                        throw new Error('Invalid key returned from WebAssembly');
-                    }
-
-                    console.log('Key derived successfully:', key.substring(0, 10) + '...');
-                    return key;
-                } catch (error) {
-                    console.error('Error in WebAssembly deriveKey function:', error);
-                    throw new Error('Failed to derive encryption key: ' + error.message);
-                }
-            } catch (error) {
-                console.error('Error deriving key:', error);
-                console.error('Error stack:', error.stack);
-                throw new Error('Failed to derive key: ' + error.message);
-            }
-        }
+        // Call the global deriveKeyFromAnswers function
+        const key = await deriveKeyFromAnswers(answers, salt);
 
         // Use WebAssembly for encryption
         let ciphertext, nonce;
