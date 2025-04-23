@@ -590,47 +590,75 @@
         addLog('Passkey demo initialized');
 
         // Initialize WebAssembly
-        const go = new Go();
-        WebAssembly.instantiateStreaming(fetch("main.wasm"), go.importObject).then((result) => {
-            go.run(result.instance);
-            addLog('WebAssembly module loaded');
-
-            // Create a global object for WebAssembly functions if it doesn't exist
-            if (!window.goWasm) {
-                window.goWasm = {};
-            }
-
-            // Add a test function if it doesn't exist
-            if (!window.goWasm.generateRandomBytes) {
-                window.goWasm.generateRandomBytes = function(length) {
-                    console.log('Using fallback random bytes generator');
-                    const bytes = new Uint8Array(length);
-                    window.crypto.getRandomValues(bytes);
-                    return btoa(String.fromCharCode.apply(null, bytes));
-                };
-            }
-
-            // Test the WebAssembly module
+        // Make the function globally available
+        window.initWebAssembly = async function() {
             try {
-                const randomBytes = window.goWasm.generateRandomBytes(16);
-                addLog(`WebAssembly test: Generated random bytes: ${randomBytes}`);
-            } catch (err) {
-                console.error('WebAssembly test failed:', err);
-                addLog('WebAssembly test failed: ' + err, 'error');
-            }
-        }).catch(err => {
-            console.error('Failed to load WebAssembly module:', err);
-            addLog('Failed to load WebAssembly module: ' + err, 'error');
+                // Create a global object for WebAssembly functions
+                window.goWasm = {};
+                window.wasmInstances = [];
 
-            // Create a fallback for WebAssembly functions
-            window.goWasm = {
-                generateRandomBytes: function(length) {
-                    console.log('Using fallback random bytes generator');
-                    const bytes = new Uint8Array(length);
-                    window.crypto.getRandomValues(bytes);
-                    return btoa(String.fromCharCode.apply(null, bytes));
+                // Create a new Go instance for each WebAssembly module
+                const go = new Go();
+
+                let result;
+                try {
+                    // Try using instantiateStreaming first (more efficient)
+                    result = await WebAssembly.instantiateStreaming(fetch('main.wasm'), go.importObject);
+                } catch (streamingError) {
+                    console.warn('WebAssembly.instantiateStreaming failed, falling back to manual fetch:', streamingError);
+                    addLog('WebAssembly.instantiateStreaming failed, trying alternative method', 'warning');
+
+                    // Fallback to manual fetch and instantiate
+                    const response = await fetch('main.wasm');
+                    const bytes = await response.arrayBuffer();
+                    result = await WebAssembly.instantiate(bytes, go.importObject);
                 }
-            };
+
+                // Store the instance for potential reuse
+                window.wasmInstances.push(result.instance);
+
+                // Run the Go program
+                go.run(result.instance);
+                addLog('WebAssembly module loaded successfully');
+
+                // Check if WebAssembly functions are available
+                if (!window.goWasm.generateRandomBytes) {
+                    console.error('WebAssembly function generateRandomBytes not found');
+                    addLog('WebAssembly function generateRandomBytes not found', 'error');
+                }
+
+                // Test the WebAssembly module
+                try {
+                    const randomBytes = window.goWasm.generateRandomBytes(16);
+                    addLog(`WebAssembly test: Generated random bytes: ${randomBytes}`);
+                    console.log('WebAssembly test successful');
+                } catch (testError) {
+                    console.error('WebAssembly test failed:', testError);
+                    addLog('WebAssembly test failed: ' + testError, 'error');
+                    // Don't throw the error, just log it
+                    console.warn('Continuing with fallbacks where possible');
+                }
+
+                return true;
+            } catch (error) {
+                console.error('Failed to initialize WebAssembly:', error);
+                addLog('Failed to initialize WebAssembly: ' + error, 'error');
+
+                // Do not create fallbacks - we want to fail if WebAssembly doesn't work
+                console.error('WebAssembly initialization failed');
+                addLog('WebAssembly initialization failed. The application will not work correctly.', 'error');
+
+                return false;
+            }
+        }
+
+        // Initialize WebAssembly when the page loads
+        window.initWebAssembly().then(success => {
+            if (success) {
+                addLog('WebAssembly initialization complete');
+            } else {
+                addLog('WebAssembly initialization failed. The application may not work correctly.', 'error');
+            }
         });
     </script>
 </body>
