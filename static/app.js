@@ -478,7 +478,10 @@ async function loadSecrets() {
 async function viewSecret(secretId) {
     try {
         // Get the secret from the server
-        const response = await fetch(`/api/secrets/get?id=${secretId}`);
+        // URL encode the secret ID to handle special characters like '/' and '+'
+        const encodedSecretId = encodeURIComponent(secretId);
+        console.log('Encoded secret ID:', encodedSecretId);
+        const response = await fetch(`/api/secrets/get?id=${encodedSecretId}`);
         if (!response.ok) {
             const errorText = await response.text();
             throw new Error(errorText);
@@ -544,7 +547,10 @@ async function decryptSecret(secretId) {
         console.log('Starting decryption process for secret ID:', secretId);
 
         // Get the secret from the server
-        const response = await fetch(`/api/secrets/get?id=${secretId}`);
+        // URL encode the secret ID to handle special characters like '/' and '+'
+        const encodedSecretId = encodeURIComponent(secretId);
+        console.log('Encoded secret ID for decryption:', encodedSecretId);
+        const response = await fetch(`/api/secrets/get?id=${encodedSecretId}`);
         if (!response.ok) {
             const errorText = await response.text();
             throw new Error(errorText);
