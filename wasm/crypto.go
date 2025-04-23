@@ -7,7 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"math/big"
-	"strconv"
+	"strings"
 	"syscall/js"
 
 	"golang.org/x/crypto/pbkdf2"
@@ -155,30 +155,11 @@ func deriveKey(this js.Value, args []js.Value) interface{} {
 		answerStrs[i] = answers.Index(i).String()
 	}
 
-	// Use Shamir Secret Sharing to split and combine the answers
-	// First, create shares from each answer
-	shares := make([]map[string]interface{}, len(answerStrs))
-
-	for i, answer := range answerStrs {
-		// Hash the answer to create a consistent value
-		answerHash := sha256.Sum256([]byte(answer))
-		answerInt := new(big.Int).SetBytes(answerHash[:])
-
-		// Create a share with x = i+1 and y = answer hash
-		shares[i] = map[string]interface{}{
-			"x": strconv.Itoa(i + 1),
-			"y": answerInt.String(),
-		}
-	}
-
-	// Convert shares to JS value
-	jsShares := js.ValueOf(shares)
-
-	// Combine the shares to get the secret
-	secretVal := shamirCombine(this, []js.Value{jsShares})
-	secretStr := secretVal.(string)
-	secretInt, _ := new(big.Int).SetString(secretStr, 10)
-	secretBytes := secretInt.Bytes()
+	// Instead of using Shamir Secret Sharing, we'll use a simpler approach for now
+	// We'll hash all the answers together to create a secret
+	combinedAnswers := strings.Join(answerStrs, "")
+	secretHash := sha256.Sum256([]byte(combinedAnswers))
+	secretBytes := secretHash[:]
 
 	// Decode salt
 	salt, err := base64.URLEncoding.DecodeString(saltStr)
