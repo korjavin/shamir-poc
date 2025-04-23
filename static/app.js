@@ -5,28 +5,55 @@ let secretAnswers = [];
 
 // Initialize the application
 document.addEventListener('DOMContentLoaded', function() {
+    console.log('DOMContentLoaded event fired');
+
     // Check if user is logged in
     checkLoginStatus();
 
     // Add event listeners
-    document.getElementById('addQuestionBtn').addEventListener('click', addQuestionField);
-    document.getElementById('createSecretBtn').addEventListener('click', createSecret);
-    document.getElementById('loadSecretsBtn').addEventListener('click', loadSecrets);
-    document.getElementById('logoutBtn').addEventListener('click', logout);
+    const addQuestionBtn = document.getElementById('addQuestionBtn');
+    const createSecretBtn = document.getElementById('createSecretBtn');
+    const loadSecretsBtn = document.getElementById('loadSecretsBtn');
+    const logoutBtn = document.getElementById('logoutBtn');
+
+    console.log('Secret management buttons found:', {
+        addQuestionBtn: !!addQuestionBtn,
+        createSecretBtn: !!createSecretBtn,
+        loadSecretsBtn: !!loadSecretsBtn,
+        logoutBtn: !!logoutBtn
+    });
+
+    if (addQuestionBtn) addQuestionBtn.addEventListener('click', addQuestionField);
+    if (createSecretBtn) createSecretBtn.addEventListener('click', createSecret);
+    if (loadSecretsBtn) loadSecretsBtn.addEventListener('click', loadSecrets);
+    if (logoutBtn) logoutBtn.addEventListener('click', logout);
+
+    // Make sure viewSecret and deleteSecret functions are globally available
+    window.viewSecret = viewSecret;
+    window.deleteSecret = deleteSecret;
+    window.removeQuestionField = removeQuestionField;
+    window.closeModal = closeModal;
+    window.decryptSecret = decryptSecret;
 });
 
 // Check if user is logged in
 // Expose this function globally so it can be called from index.html
 window.checkLoginStatus = async function() {
+    console.log('checkLoginStatus called');
     try {
         const cookie = document.cookie.split('; ').find(row => row.startsWith('session_id='));
+        console.log('Cookie found:', cookie);
         if (cookie) {
             // Try to get user info
+            console.log('Fetching user info...');
             const response = await fetch('/api/user/info');
+            console.log('User info response:', response);
             if (response.ok) {
                 const data = await response.json();
+                console.log('User info data:', data);
                 if (data.status === 'success') {
                     currentUser = data.username;
+                    console.log('User logged in as:', currentUser);
                     showLoggedInUI();
                     return;
                 }
@@ -34,6 +61,7 @@ window.checkLoginStatus = async function() {
         }
 
         // If we get here, user is not logged in
+        console.log('User not logged in, showing login UI');
         showLoginUI();
     } catch (error) {
         console.error('Error checking login status:', error);
@@ -43,6 +71,7 @@ window.checkLoginStatus = async function() {
 
 // Show the login/register UI
 function showLoginUI() {
+    console.log('showLoginUI called');
     document.getElementById('loginSection').style.display = 'block';
     document.getElementById('secretSection').style.display = 'none';
     document.getElementById('userInfo').textContent = '';
@@ -50,9 +79,27 @@ function showLoginUI() {
 
 // Show the secret management UI
 function showLoggedInUI() {
-    document.getElementById('loginSection').style.display = 'none';
-    document.getElementById('secretSection').style.display = 'block';
-    document.getElementById('userInfo').textContent = `Logged in as: ${currentUser}`;
+    console.log('showLoggedInUI called');
+    const loginSection = document.getElementById('loginSection');
+    const secretSection = document.getElementById('secretSection');
+    const userInfo = document.getElementById('userInfo');
+
+    console.log('Elements found:', {
+        loginSection: !!loginSection,
+        secretSection: !!secretSection,
+        userInfo: !!userInfo
+    });
+
+    if (loginSection) {
+        loginSection.style.display = 'none';
+        console.log('Login section hidden');
+    }
+    if (secretSection) {
+        secretSection.style.display = 'block';
+        secretSection.style.cssText = 'display: block !important';
+        console.log('Secret section shown');
+    }
+    if (userInfo) userInfo.textContent = `Logged in as: ${currentUser}`;
 
     // Load secrets
     loadSecrets();
@@ -239,23 +286,36 @@ async function createSecret() {
 
 // Load secrets
 async function loadSecrets() {
+    console.log('loadSecrets called');
     try {
+        console.log('Fetching secrets...');
         const response = await fetch('/api/secrets');
+        console.log('Secrets response:', response);
         if (!response.ok) {
             const errorText = await response.text();
+            console.error('Error response text:', errorText);
             throw new Error(errorText);
         }
 
         const data = await response.json();
+        console.log('Secrets data:', data);
         if (data.status === 'success') {
             const secretsList = document.getElementById('secretsList');
+            console.log('secretsList element found:', !!secretsList);
+            if (!secretsList) {
+                console.error('secretsList element not found');
+                return;
+            }
+
             secretsList.innerHTML = '';
 
-            if (data.secrets.length === 0) {
+            if (!data.secrets || data.secrets.length === 0) {
+                console.log('No secrets found');
                 secretsList.innerHTML = '<p>No secrets found. Create a new one!</p>';
                 return;
             }
 
+            console.log(`Found ${data.secrets.length} secrets`);
             data.secrets.forEach(secret => {
                 const secretItem = document.createElement('div');
                 secretItem.className = 'secret-item';
@@ -272,6 +332,7 @@ async function loadSecrets() {
                 `;
                 secretsList.appendChild(secretItem);
             });
+            console.log('Secrets rendered to UI');
         } else {
             throw new Error(data.message || 'Failed to load secrets');
         }

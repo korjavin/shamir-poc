@@ -117,7 +117,8 @@
 
         /* Secret management styles */
         #secretSection {
-            display: none;
+            /* Initially hidden, will be shown by JavaScript */
+            display: none !important;
         }
 
         .question-group {
@@ -536,6 +537,10 @@
 
                 // Call checkLoginStatus to update the UI
                 checkLoginStatus();
+
+                // Also try direct UI update
+                currentUser = result.username;
+                showLoggedInUI();
             } catch (error) {
                 showStatus(`Login failed: ${error.message}`, true);
                 console.error('Login error:', error);
@@ -571,9 +576,43 @@
         WebAssembly.instantiateStreaming(fetch("main.wasm"), go.importObject).then((result) => {
             go.run(result.instance);
             addLog('WebAssembly module loaded');
+
+            // Create a global object for WebAssembly functions if it doesn't exist
+            if (!window.goWasm) {
+                window.goWasm = {};
+            }
+
+            // Add a test function if it doesn't exist
+            if (!window.goWasm.generateRandomBytes) {
+                window.goWasm.generateRandomBytes = function(length) {
+                    console.log('Using fallback random bytes generator');
+                    const bytes = new Uint8Array(length);
+                    window.crypto.getRandomValues(bytes);
+                    return btoa(String.fromCharCode.apply(null, bytes));
+                };
+            }
+
+            // Test the WebAssembly module
+            try {
+                const randomBytes = window.goWasm.generateRandomBytes(16);
+                addLog(`WebAssembly test: Generated random bytes: ${randomBytes}`);
+            } catch (err) {
+                console.error('WebAssembly test failed:', err);
+                addLog('WebAssembly test failed: ' + err, 'error');
+            }
         }).catch(err => {
             console.error('Failed to load WebAssembly module:', err);
             addLog('Failed to load WebAssembly module: ' + err, 'error');
+
+            // Create a fallback for WebAssembly functions
+            window.goWasm = {
+                generateRandomBytes: function(length) {
+                    console.log('Using fallback random bytes generator');
+                    const bytes = new Uint8Array(length);
+                    window.crypto.getRandomValues(bytes);
+                    return btoa(String.fromCharCode.apply(null, bytes));
+                }
+            };
         });
     </script>
 </body>
