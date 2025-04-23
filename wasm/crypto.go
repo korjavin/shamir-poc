@@ -7,7 +7,6 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"math/big"
-	"strings"
 	"syscall/js"
 
 	"golang.org/x/crypto/pbkdf2"
@@ -135,7 +134,7 @@ func shamirCombine(this js.Value, args []js.Value) interface{} {
 	return secret.String()
 }
 
-// deriveKey derives a key from a set of answers and a salt
+// deriveKey derives a key from a set of answers and a salt using Shamir's Secret Sharing
 func deriveKey(this js.Value, args []js.Value) interface{} {
 	if len(args) < 3 {
 		return js.Error{Value: js.ValueOf("Missing arguments: answers, salt, threshold")}
@@ -149,17 +148,46 @@ func deriveKey(this js.Value, args []js.Value) interface{} {
 		return js.Error{Value: js.ValueOf("Not enough answers provided")}
 	}
 
-	// Convert answers to strings
-	answerStrs := make([]string, answers.Length())
+	// Create a prime number for finite field arithmetic
+	prime := new(big.Int).Exp(big.NewInt(2), big.NewInt(256), nil) // 2^256
+	prime = prime.Sub(prime, big.NewInt(189))                      // 2^256 - 189 (a prime number)
+
+	// Generate shares from each answer
+	xValues := make([]*big.Int, answers.Length())
+	yValues := make([]*big.Int, answers.Length())
+
 	for i := 0; i < answers.Length(); i++ {
-		answerStrs[i] = answers.Index(i).String()
+		answer := answers.Index(i).String()
+
+		// Hash the answer to create a consistent y-value
+		answerHash := sha256.Sum256([]byte(answer))
+		yValue := new(big.Int).SetBytes(answerHash[:])
+		yValue.Mod(yValue, prime) // Ensure it's within the field
+
+		// Use position (i+1) as the x-value
+		xValue := big.NewInt(int64(i + 1))
+
+		xValues[i] = xValue
+		yValues[i] = yValue
 	}
 
-	// Instead of using Shamir Secret Sharing, we'll use a simpler approach for now
-	// We'll hash all the answers together to create a secret
-	combinedAnswers := strings.Join(answerStrs, "")
-	secretHash := sha256.Sum256([]byte(combinedAnswers))
-	secretBytes := secretHash[:]
+	// Use only the first 'threshold' number of shares for interpolation
+	xSubset := xValues[:threshold]
+	ySubset := yValues[:threshold]
+
+	// Use Lagrange interpolation to reconstruct the secret at x=0
+	secretInt := lagrangeInterpolation(xSubset, ySubset, big.NewInt(0), prime)
+
+	// Convert to bytes (ensure we have at least 32 bytes)
+	secretBytes := secretInt.Bytes()
+	if len(secretBytes) < 32 {
+		padded := make([]byte, 32)
+		copy(padded[32-len(secretBytes):], secretBytes)
+		secretBytes = padded
+	} else if len(secretBytes) > 32 {
+		// If longer than 32 bytes, take the first 32
+		secretBytes = secretBytes[:32]
+	}
 
 	// Decode salt
 	salt, err := base64.URLEncoding.DecodeString(saltStr)
@@ -211,11 +239,13 @@ func encryptSecret(this js.Value, args []js.Value) interface{} {
 	// Encrypt
 	ciphertext := gcm.Seal(nil, nonce, []byte(secretStr), []byte(aadStr))
 
+	// Create a JavaScript object to return
+	result := js.Global().Get("Object").New()
+	result.Set("ciphertext", base64.StdEncoding.EncodeToString(ciphertext))
+	result.Set("nonce", base64.StdEncoding.EncodeToString(nonce))
+
 	// Return result
-	return js.ValueOf(map[string]interface{}{
-		"ciphertext": base64.StdEncoding.EncodeToString(ciphertext),
-		"nonce":      base64.StdEncoding.EncodeToString(nonce),
-	})
+	return result
 }
 
 // decryptSecret decrypts a secret using AES-GCM
