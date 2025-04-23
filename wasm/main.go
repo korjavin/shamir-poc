@@ -9,9 +9,6 @@ import (
 // Global variables to prevent garbage collection of function values
 var (
 	generateRandomBytesFunc js.Func
-	deriveKeyFromPRFFunc    js.Func
-	encryptSecretFunc       js.Func
-	decryptSecretFunc       js.Func
 )
 
 func main() {
@@ -25,6 +22,9 @@ func main() {
 	js.Global().Set("goWasm", map[string]interface{}{
 		"generateRandomBytes": generateRandomBytesFunc,
 	})
+
+	// Initialize crypto functions
+	InitCryptoFunctions()
 
 	// Print a message to the console
 	js.Global().Get("console").Call("log", "WebAssembly module initialized")

@@ -187,10 +187,11 @@ func main() {
 	// Initialize stores
 	userStore := NewUserStore()
 	sessionStore := NewSessionStore()
+	secretStore := NewSecretStore(logger)
 	logger.Println("Initialized in-memory stores")
 
 	// Load data from storage
-	if err := loadFromStorage(userStore, logger); err != nil {
+	if err := loadFromStorage(userStore, secretStore, logger); err != nil {
 		logger.Printf("Warning: Failed to load data from storage: %v", err)
 	}
 
@@ -431,7 +432,7 @@ func main() {
 		})
 
 		// Sync storage
-		if err := storageSync(userStore, logger); err != nil {
+		if err := saveToStorage(userStore, secretStore, logger); err != nil {
 			logger.Printf("Warning: Failed to sync storage: %v", err)
 		}
 
@@ -686,6 +687,43 @@ func main() {
 		})
 		logger.Println("Login completed successfully")
 	})
+
+	// User info endpoint
+	http.HandleFunc("/api/user/info", func(w http.ResponseWriter, r *http.Request) {
+		// Get session ID from cookie
+		cookie, err := r.Cookie("session_id")
+		if err != nil {
+			logger.Printf("No session cookie: %v", err)
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		// Get session
+		session, ok := sessionStore.GetSession(cookie.Value)
+		if !ok {
+			logger.Printf("Invalid session")
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		// Get user
+		_, username, ok := userStore.GetUserByID(session.UserID)
+		if !ok {
+			logger.Printf("User not found for session")
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		// Return user info
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":   "success",
+			"username": username,
+		})
+	})
+
+	// Setup secret handlers
+	setupSecretHandlers(secretStore, userStore, sessionStore, logger)
 
 	// Start server
 	port := 8084

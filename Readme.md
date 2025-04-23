@@ -14,10 +14,10 @@ The application supports the following flows:
 1. **Register/Login with Passkeys**: Create and use WebAuthn credentials (implemented in `passkey.go`)
 2. **New Secret Questions**: WebUI allows user to create an arbitrary number of Secret Questions with their Answers
 3. **New Secret**: WebUI allows user to create a new secret with an associated ID and some generated salt
-4. **Encrypt/Decrypt**: Use the Answers to Secret Questions, using Shamir schema, so a client need to know only a subset of the Answers    to derive an encryption key and encrypt/decrypt the secret. Answers never leave the browser, all the decryption happens in the browser. Only Secret Questions, Encrypted Secrets, their IDs,AAD, and salts are stored on the server. Secrets are encrypted using AES-GCM with a key derived from the Answers output.
+4. **Encrypt/Decrypt**: Use the Answers to Secret Questions, using Shamir schema, so a client needs to know only a subset of the Answers to derive an encryption key and encrypt/decrypt the secret. Answers never leave the browser, all decryption happens in the browser. Only Secret Questions, Encrypted Secrets, their IDs, AAD, and salts are stored on the server. Secrets are encrypted using AES-GCM with a key derived from the Answers output.
 5. **Key Derivation**: Use the PBKDF2-HMAC algorithm applied to Answers on Secret Questions to derive a key for encryption/decryption
 6. **Encryption Algorithm**: Use AES-GCM for encryption/decryption of the secret
-7. **Load Secrets**: Retrieve previously stored encrypted secrets from the server, and save them there after encryption 
+7. **Load Secrets**: Retrieve previously stored encrypted secrets from the server, and save them there after encryption
 
 ---
 
@@ -42,10 +42,10 @@ We deliberately focus on the core functionality of **"Answers (Shamir Schema) �
    1. Browser generates:
       * `secretID` – 16 random bytes (base64url-encoded).
       * `salt` – 32 random bytes (base64url-encoded).
-      * `secret` – Let user to specify text
-      * `aad` – Let user to specify text
-      * `secretQuestions` – Let user to specify text for N secret questions (N chosen by user by using ADD/Del buttons)
-      * `secretAnswers` – Let user to specify text every Question (never leave browser)
+      * `secret` – Lets user specify text
+      * `aad` – Lets user specify text
+      * `secretQuestions` – Lets user specify text for N secret questions (N chosen by user by using ADD/Del buttons)
+      * `secretAnswers` – Lets user specify text for every Question (never leaves browser)
    2. Browser stores these values in memory and displays them in the UI.
 
 4. **Key Derivation**:
@@ -58,10 +58,10 @@ We deliberately focus on the core functionality of **"Answers (Shamir Schema) �
    4. Server stores the encrypted data in the data.json file.
 6. **Decrypt Secret**:
    1. Browser retrieves the encrypted data from the server.
-   2. Browser colects secretAnswers from user presented Secret Questions.
+   2. Browser collects secretAnswers from user-presented Secret Questions.
    3. Browser uses secretAnswers to derive a key using PBKDF2-HMAC-SHA256.
-   3. Browser decrypts the secret using the derived key, nonce, and AAD.
-   4. The decrypted secret is displayed in the UI.
+   4. Browser decrypts the secret using the derived key, nonce, and AAD.
+   5. The decrypted secret is displayed in the UI.
 
 ---
 

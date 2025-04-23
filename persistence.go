@@ -12,7 +12,8 @@ import (
 
 // PersistentData represents the application data to be persisted
 type PersistentData struct {
-	Users map[string]PersistentUser `json:"users"`
+	Users   map[string]PersistentUser `json:"users"`
+	Secrets map[string][]Secret       `json:"secrets"`
 }
 
 // PersistentUser represents a user with credentials
@@ -47,28 +48,22 @@ type PersistentAuthenticator struct {
 	CloneWarning bool   `json:"cloneWarning"`
 }
 
-// PersistentSecret represents an encrypted secret with its ID, salt, and encrypted data
-type PersistentSecret struct {
-	ID         string `json:"id"`
-	Salt       string `json:"salt"`
-	Ciphertext string `json:"ciphertext"`
-	Nonce      string `json:"nonce"`
-	AAD        string `json:"aad"`
-}
+// Secret struct is defined in secret.go
 
 var (
 	persistenceFile = "data.json"
 	persistenceLock sync.Mutex
 )
 
-// storageSync saves the current state to a file
+// storageSync saves the current state to a file (deprecated, use saveToStorage instead)
 func storageSync(userStore *UserStore, logger *log.Logger) error {
 	persistenceLock.Lock()
 	defer persistenceLock.Unlock()
 
 	// Create persistent data
 	data := PersistentData{
-		Users: make(map[string]PersistentUser)}
+		Users:   make(map[string]PersistentUser),
+		Secrets: make(map[string][]Secret)}
 
 	// Save users
 	userStore.mu.RLock()
@@ -118,12 +113,12 @@ func storageSync(userStore *UserStore, logger *log.Logger) error {
 	}
 
 	logger.Printf("Saved data with %d users and %d user secret entries",
-		len(data.Users))
+		len(data.Users), len(data.Secrets))
 	return nil
 }
 
 // loadFromStorage loads data from storage into the user and secret stores
-func loadFromStorage(userStore *UserStore, logger *log.Logger) error {
+func loadFromStorage(userStore *UserStore, secretStore *SecretStore, logger *log.Logger) error {
 	persistenceLock.Lock()
 	defer persistenceLock.Unlock()
 
@@ -222,7 +217,12 @@ func loadFromStorage(userStore *UserStore, logger *log.Logger) error {
 		logger.Printf("Loaded user %s with %d credentials", username, len(credentials))
 	}
 
-	logger.Printf("Loaded data with %d users",
-		len(persistentData.Users))
+	// Load secrets
+	if persistentData.Secrets != nil {
+		secretStore.LoadFromPersistence(persistentData.Secrets)
+	}
+
+	logger.Printf("Loaded data with %d users and %d user secret entries",
+		len(persistentData.Users), len(persistentData.Secrets))
 	return nil
 }

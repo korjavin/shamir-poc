@@ -1,0 +1,451 @@
+// Global variables
+let currentUser = null;
+let secretQuestions = [];
+let secretAnswers = [];
+
+// Initialize the application
+document.addEventListener('DOMContentLoaded', function() {
+    // Check if user is logged in
+    checkLoginStatus();
+
+    // Add event listeners
+    document.getElementById('addQuestionBtn').addEventListener('click', addQuestionField);
+    document.getElementById('createSecretBtn').addEventListener('click', createSecret);
+    document.getElementById('loadSecretsBtn').addEventListener('click', loadSecrets);
+    document.getElementById('logoutBtn').addEventListener('click', logout);
+});
+
+// Check if user is logged in
+// Expose this function globally so it can be called from index.html
+window.checkLoginStatus = async function() {
+    try {
+        const cookie = document.cookie.split('; ').find(row => row.startsWith('session_id='));
+        if (cookie) {
+            // Try to get user info
+            const response = await fetch('/api/user/info');
+            if (response.ok) {
+                const data = await response.json();
+                if (data.status === 'success') {
+                    currentUser = data.username;
+                    showLoggedInUI();
+                    return;
+                }
+            }
+        }
+
+        // If we get here, user is not logged in
+        showLoginUI();
+    } catch (error) {
+        console.error('Error checking login status:', error);
+        showLoginUI();
+    }
+}
+
+// Show the login/register UI
+function showLoginUI() {
+    document.getElementById('loginSection').style.display = 'block';
+    document.getElementById('secretSection').style.display = 'none';
+    document.getElementById('userInfo').textContent = '';
+}
+
+// Show the secret management UI
+function showLoggedInUI() {
+    document.getElementById('loginSection').style.display = 'none';
+    document.getElementById('secretSection').style.display = 'block';
+    document.getElementById('userInfo').textContent = `Logged in as: ${currentUser}`;
+
+    // Load secrets
+    loadSecrets();
+}
+
+// Add a new question field
+function addQuestionField() {
+    const questionsContainer = document.getElementById('secretQuestions');
+    const questionCount = questionsContainer.children.length;
+
+    const questionGroup = document.createElement('div');
+    questionGroup.className = 'question-group';
+    questionGroup.innerHTML = `
+        <div class="form-group">
+            <label for="question${questionCount}">Question ${questionCount + 1}:</label>
+            <input type="text" id="question${questionCount}" class="question-input" placeholder="Enter a secret question">
+        </div>
+        <div class="form-group">
+            <label for="answer${questionCount}">Answer ${questionCount + 1}:</label>
+            <input type="text" id="answer${questionCount}" class="answer-input" placeholder="Enter the answer">
+        </div>
+        <button type="button" class="remove-btn" onclick="removeQuestionField(this)">Remove</button>
+    `;
+
+    questionsContainer.appendChild(questionGroup);
+}
+
+// Remove a question field
+function removeQuestionField(button) {
+    const questionGroup = button.parentElement;
+    questionGroup.parentElement.removeChild(questionGroup);
+
+    // Renumber the remaining questions
+    const questionGroups = document.querySelectorAll('.question-group');
+    questionGroups.forEach((group, index) => {
+        const questionLabel = group.querySelector('label[for^="question"]');
+        const answerLabel = group.querySelector('label[for^="answer"]');
+        const questionInput = group.querySelector('.question-input');
+        const answerInput = group.querySelector('.answer-input');
+
+        questionLabel.setAttribute('for', `question${index}`);
+        answerLabel.setAttribute('for', `answer${index}`);
+        questionLabel.textContent = `Question ${index + 1}:`;
+        answerLabel.textContent = `Answer ${index + 1}:`;
+        questionInput.id = `question${index}`;
+        answerInput.id = `answer${index}`;
+    });
+}
+
+// Generate a random ID
+function generateRandomId(length = 16) {
+    console.log('Generating random ID, goWasm available:', !!window.goWasm);
+    if (!window.goWasm) {
+        console.error('WebAssembly module not loaded yet!');
+        return 'temp-id-' + Math.random().toString(36).substring(2, 15);
+    }
+    return window.goWasm.generateRandomBytes(length);
+}
+
+// Generate a random salt
+function generateRandomSalt(length = 32) {
+    console.log('Generating random salt, goWasm available:', !!window.goWasm);
+    if (!window.goWasm) {
+        console.error('WebAssembly module not loaded yet!');
+        return 'temp-salt-' + Math.random().toString(36).substring(2, 15);
+    }
+    return window.goWasm.generateRandomBytes(length);
+}
+
+// Create a new secret
+async function createSecret() {
+    try {
+        // Get secret text
+        const secretText = document.getElementById('secretText').value.trim();
+        if (!secretText) {
+            showMessage('Please enter a secret text', 'error');
+            return;
+        }
+
+        // Get AAD
+        const aad = document.getElementById('aadText').value.trim();
+
+        // Get questions and answers
+        const questionInputs = document.querySelectorAll('.question-input');
+        const answerInputs = document.querySelectorAll('.answer-input');
+
+        if (questionInputs.length === 0) {
+            showMessage('Please add at least one secret question', 'error');
+            return;
+        }
+
+        const questions = [];
+        const answers = [];
+
+        for (let i = 0; i < questionInputs.length; i++) {
+            const question = questionInputs[i].value.trim();
+            const answer = answerInputs[i].value.trim();
+
+            if (!question || !answer) {
+                showMessage('Please fill in all questions and answers', 'error');
+                return;
+            }
+
+            questions.push(question);
+            answers.push(answer);
+        }
+
+        // Generate random ID and salt
+        const secretId = generateRandomId();
+        const salt = generateRandomSalt();
+
+        // Derive key from answers using Shamir Secret Sharing
+        function deriveKeyFromAnswers(answers, salt) {
+            try {
+                // Convert answers to a JavaScript array for WebAssembly
+                const answersArray = [];
+                for (let answer of answers) {
+                    answersArray.push(answer);
+                }
+
+                // Derive key using Shamir Secret Sharing
+                // We use a threshold of Math.ceil(answers.length / 2) to require at least half of the answers
+                const threshold = Math.ceil(answers.length / 2);
+                const key = window.goWasm.deriveKey(answersArray, salt, threshold);
+                console.log('Key derived successfully');
+                return key;
+            } catch (error) {
+                console.error('Error deriving key:', error);
+                throw new Error('Failed to derive key: ' + error.message);
+            }
+        }
+
+        // Derive key from answers
+        const key = deriveKeyFromAnswers(answers, salt);
+
+        // Encrypt secret using AES-GCM
+        const encryptionResult = window.goWasm.encryptSecret(secretText, key, aad);
+        const ciphertext = encryptionResult.ciphertext;
+        const nonce = encryptionResult.nonce;
+
+        // Create secret object
+        const secret = {
+            id: secretId,
+            salt: salt,
+            secretQuestions: questions,
+            ciphertext: ciphertext,
+            nonce: nonce,
+            aad: aad
+        };
+
+        // Send to server
+        const response = await fetch('/api/secrets/create', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(secret)
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(errorText);
+        }
+
+        const data = await response.json();
+        if (data.status === 'success') {
+            showMessage('Secret created successfully', 'success');
+
+            // Clear form
+            document.getElementById('secretText').value = '';
+            document.getElementById('aadText').value = '';
+            document.getElementById('secretQuestions').innerHTML = '';
+
+            // Reload secrets
+            loadSecrets();
+        } else {
+            throw new Error(data.message || 'Failed to create secret');
+        }
+    } catch (error) {
+        console.error('Error creating secret:', error);
+        showMessage(`Error creating secret: ${error.message}`, 'error');
+    }
+}
+
+// Load secrets
+async function loadSecrets() {
+    try {
+        const response = await fetch('/api/secrets');
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(errorText);
+        }
+
+        const data = await response.json();
+        if (data.status === 'success') {
+            const secretsList = document.getElementById('secretsList');
+            secretsList.innerHTML = '';
+
+            if (data.secrets.length === 0) {
+                secretsList.innerHTML = '<p>No secrets found. Create a new one!</p>';
+                return;
+            }
+
+            data.secrets.forEach(secret => {
+                const secretItem = document.createElement('div');
+                secretItem.className = 'secret-item';
+                secretItem.innerHTML = `
+                    <h3>Secret ID: ${secret.id.substring(0, 8)}...</h3>
+                    <p><strong>Questions:</strong></p>
+                    <ul>
+                        ${secret.secretQuestions.map(q => `<li>${q}</li>`).join('')}
+                    </ul>
+                    <div class="secret-actions">
+                        <button onclick="viewSecret('${secret.id}')">View</button>
+                        <button onclick="deleteSecret('${secret.id}')">Delete</button>
+                    </div>
+                `;
+                secretsList.appendChild(secretItem);
+            });
+        } else {
+            throw new Error(data.message || 'Failed to load secrets');
+        }
+    } catch (error) {
+        console.error('Error loading secrets:', error);
+        showMessage(`Error loading secrets: ${error.message}`, 'error');
+    }
+}
+
+// View a secret
+async function viewSecret(secretId) {
+    try {
+        // Get the secret from the server
+        const response = await fetch(`/api/secrets/get?id=${secretId}`);
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(errorText);
+        }
+
+        const data = await response.json();
+        if (data.status === 'success') {
+            const secret = data.secret;
+
+            // Create a modal to display the secret and collect answers
+            const modal = document.createElement('div');
+            modal.className = 'modal';
+            modal.innerHTML = `
+                <div class="modal-content">
+                    <span class="close" onclick="closeModal()">&times;</span>
+                    <h2>View Secret</h2>
+                    <p><strong>Secret ID:</strong> ${secret.id}</p>
+                    <p><strong>Salt:</strong> ${secret.salt}</p>
+                    <p><strong>AAD:</strong> ${secret.aad || 'None'}</p>
+
+                    <h3>Answer the Secret Questions</h3>
+                    <div id="modalQuestions">
+                        ${secret.secretQuestions.map((q, i) => `
+                            <div class="form-group">
+                                <label for="modalAnswer${i}">${q}</label>
+                                <input type="text" id="modalAnswer${i}" placeholder="Enter your answer">
+                            </div>
+                        `).join('')}
+                    </div>
+
+                    <button onclick="decryptSecret('${secret.id}')">Decrypt</button>
+
+                    <div id="decryptedSecret" style="display: none;">
+                        <h3>Decrypted Secret</h3>
+                        <p id="decryptedText"></p>
+                    </div>
+                </div>
+            `;
+
+            document.body.appendChild(modal);
+        } else {
+            throw new Error(data.message || 'Failed to load secret');
+        }
+    } catch (error) {
+        console.error('Error viewing secret:', error);
+        showMessage(`Error viewing secret: ${error.message}`, 'error');
+    }
+}
+
+// Close the modal
+function closeModal() {
+    const modal = document.querySelector('.modal');
+    if (modal) {
+        document.body.removeChild(modal);
+    }
+}
+
+// Decrypt a secret
+async function decryptSecret(secretId) {
+    try {
+        // Get the secret from the server
+        const response = await fetch(`/api/secrets/get?id=${secretId}`);
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(errorText);
+        }
+
+        const data = await response.json();
+        if (data.status === 'success') {
+            const secret = data.secret;
+
+            // Get answers from the modal
+            const answerInputs = document.querySelectorAll('[id^="modalAnswer"]');
+            const answers = Array.from(answerInputs).map(input => input.value.trim());
+
+            // Check if all answers are provided
+            if (answers.some(a => !a)) {
+                showMessage('Please answer all questions', 'error');
+                return;
+            }
+
+            // Derive key from answers using Shamir Secret Sharing
+            const answersArray = [];
+            for (let answer of answers) {
+                answersArray.push(answer);
+            }
+
+            // Derive key using Shamir Secret Sharing
+            const threshold = Math.ceil(answers.length / 2);
+            const key = window.goWasm.deriveKey(answersArray, secret.salt, threshold);
+
+            // Decrypt secret using AES-GCM
+            const decryptedText = window.goWasm.decryptSecret(
+                secret.ciphertext,
+                key,
+                secret.nonce,
+                secret.aad || ''
+            );
+
+            // Display decrypted secret
+            document.getElementById('decryptedSecret').style.display = 'block';
+            document.getElementById('decryptedText').textContent = decryptedText;
+        } else {
+            throw new Error(data.message || 'Failed to load secret');
+        }
+    } catch (error) {
+        console.error('Error decrypting secret:', error);
+        showMessage(`Error decrypting secret: ${error.message}`, 'error');
+    }
+}
+
+// Delete a secret
+async function deleteSecret(secretId) {
+    if (!confirm('Are you sure you want to delete this secret?')) {
+        return;
+    }
+
+    try {
+        const response = await fetch('/api/secrets/delete', {
+            method: 'DELETE',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ id: secretId })
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(errorText);
+        }
+
+        const data = await response.json();
+        if (data.status === 'success') {
+            showMessage('Secret deleted successfully', 'success');
+            loadSecrets();
+        } else {
+            throw new Error(data.message || 'Failed to delete secret');
+        }
+    } catch (error) {
+        console.error('Error deleting secret:', error);
+        showMessage(`Error deleting secret: ${error.message}`, 'error');
+    }
+}
+
+// Logout
+function logout() {
+    document.cookie = 'session_id=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
+    currentUser = null;
+    showLoginUI();
+}
+
+// Show a message
+function showMessage(message, type = 'info') {
+    const messageElement = document.getElementById('message');
+    messageElement.textContent = message;
+    messageElement.className = `message message-${type}`;
+    messageElement.style.display = 'block';
+
+    // Hide after 5 seconds
+    setTimeout(() => {
+        messageElement.style.display = 'none';
+    }, 5000);
+}

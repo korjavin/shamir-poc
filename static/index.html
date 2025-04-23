@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Passkey Demo</title>
+    <title>Shamir Secret Sharing Demo</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -114,13 +114,105 @@
             border-radius: 3px;
             font-family: monospace;
         }
+
+        /* Secret management styles */
+        #secretSection {
+            display: none;
+        }
+
+        .question-group {
+            border: 1px solid #ddd;
+            padding: 15px;
+            margin-bottom: 15px;
+            border-radius: 4px;
+            background-color: #f9f9f9;
+        }
+
+        .remove-btn {
+            background-color: #f44336;
+            color: white;
+            margin-top: 10px;
+        }
+
+        .secret-item {
+            border: 1px solid #ddd;
+            padding: 15px;
+            margin-bottom: 15px;
+            border-radius: 4px;
+        }
+
+        .secret-actions {
+            margin-top: 10px;
+        }
+
+        .message {
+            padding: 10px;
+            border-radius: 4px;
+            margin-top: 10px;
+            display: none;
+        }
+
+        .message-success {
+            background-color: #e8f5e9;
+            color: #2e7d32;
+        }
+
+        .message-error {
+            background-color: #ffebee;
+            color: #c62828;
+        }
+
+        .message-info {
+            background-color: #e3f2fd;
+            color: #1565c0;
+        }
+
+        .modal {
+            display: block;
+            position: fixed;
+            z-index: 1;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            overflow: auto;
+            background-color: rgba(0,0,0,0.4);
+        }
+
+        .modal-content {
+            background-color: #fefefe;
+            margin: 15% auto;
+            padding: 20px;
+            border: 1px solid #888;
+            width: 80%;
+            max-width: 600px;
+            border-radius: 8px;
+        }
+
+        .close {
+            color: #aaa;
+            float: right;
+            font-size: 28px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        .close:hover,
+        .close:focus {
+            color: black;
+            text-decoration: none;
+        }
     </style>
 </head>
 <body>
     <div class="container">
-        <div class="card">
-            <h1>Passkey Authentication Demo</h1>
-            <p>This demo shows how to use passkeys for authentication without passwords.</p>
+        <div id="userInfo" class="card" style="text-align: right; padding: 10px;"></div>
+
+        <div id="message" class="message"></div>
+
+        <div id="loginSection" class="card">
+            <h1>Shamir Secret Sharing Demo</h1>
+            <p>This demo shows how to use Shamir Secret Sharing with browser-side cryptography.</p>
 
             <div class="form-group">
                 <label for="username">Username</label>
@@ -165,6 +257,40 @@
             </div>
         </div>
 
+        <div id="secretSection" class="card">
+            <h1>Secret Management</h1>
+            <p>Create and manage your secrets using Shamir Secret Sharing.</p>
+
+            <div class="button-group">
+                <button id="loadSecretsBtn" class="secondary">Refresh Secrets</button>
+                <button id="logoutBtn" class="primary">Logout</button>
+            </div>
+
+            <h2>Create New Secret</h2>
+            <div class="form-group">
+                <label for="secretText">Secret Text</label>
+                <input type="text" id="secretText" placeholder="Enter your secret text">
+            </div>
+
+            <div class="form-group">
+                <label for="aadText">Additional Authenticated Data (AAD)</label>
+                <input type="text" id="aadText" placeholder="Optional: Enter AAD for additional security">
+            </div>
+
+            <h3>Secret Questions</h3>
+            <p>Add questions and answers that will be used to derive the encryption key. You'll need to remember these to decrypt your secret.</p>
+
+            <div id="secretQuestions"></div>
+
+            <div class="button-group">
+                <button id="addQuestionBtn" class="secondary">Add Question</button>
+                <button id="createSecretBtn" class="primary">Create Secret</button>
+            </div>
+
+            <h2>Your Secrets</h2>
+            <div id="secretsList"></div>
+        </div>
+
         <div class="card">
             <h2>Detailed Logs</h2>
             <p>This section shows detailed logs of the WebAuthn process, explaining each step.</p>
@@ -172,6 +298,8 @@
         </div>
     </div>
 
+    <script src="wasm_exec.js"></script>
+    <script src="app.js"></script>
     <script>
         // DOM elements
         const usernameInput = document.getElementById('username');
@@ -405,6 +533,9 @@
                 addLog('Login completed successfully', 'success');
                 addLog('Your private key was never sent to the server', 'success');
                 showStatus(`Login successful! Welcome, ${result.username}.`);
+
+                // Call checkLoginStatus to update the UI
+                checkLoginStatus();
             } catch (error) {
                 showStatus(`Login failed: ${error.message}`, true);
                 console.error('Login error:', error);
@@ -434,6 +565,16 @@
 
         // Add initial log
         addLog('Passkey demo initialized');
+
+        // Initialize WebAssembly
+        const go = new Go();
+        WebAssembly.instantiateStreaming(fetch("main.wasm"), go.importObject).then((result) => {
+            go.run(result.instance);
+            addLog('WebAssembly module loaded');
+        }).catch(err => {
+            console.error('Failed to load WebAssembly module:', err);
+            addLog('Failed to load WebAssembly module: ' + err, 'error');
+        });
     </script>
 </body>
 </html>
